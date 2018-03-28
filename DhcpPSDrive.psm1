@@ -70,8 +70,8 @@ class DhcpServer : SHiPSDirectory
             $this.DomainList        = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 15 -ErrorAction SilentlyContinue ).Value
             $this.NtpList           = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 42 -ErrorAction SilentlyContinue ).Value
             $this.UcTftpCallMgrList = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 150 -ErrorAction SilentlyContinue ).Value
-            $this.IPv4Binding       = Get-DhcpServerv4Binding | Convert-PSObjectToHashTable -Exclude
-            $this.Ipv6Binding       = Get-DhcpServerv6Binding | Convert-PSObjectToHashTable -Exclude
+            $this.IPv4Binding       = Get-DhcpServerv4Binding | Convert-PSObjectToHashTable
+            $this.Ipv6Binding       = Get-DhcpServerv6Binding | Convert-PSObjectToHashTable
             $this.DynamicDnsQueueLength = Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\DhcpServer\Parameters `
                                             -Name DynamicDNSQueueLength -ErrorAction SilentlyContinue |
                                                 Select-Object -ExpandProperty DynamicDNSQueueLength
@@ -160,6 +160,8 @@ class v4Scope : SHiPSDirectory
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
         $obj.Add([ScopeOptions]::new($this.ScopeId, $this.DnsName))
+        $obj.Add([Reservations]::new($this.ScopeId, $this.DnsName))
+        $obj.Add([AddressLeases]::new($this.ScopeId, $this.DnsName))
         return $obj
     }
 
@@ -186,6 +188,7 @@ class v4Scope : SHiPSDirectory
     }
 }
 
+[SHiPSProvider(UseCache=$true)]
 class ScopeOptions : SHiPSDirectory
 {
     [String] $ScopeId
@@ -266,7 +269,115 @@ class v4ScopeOption : SHiPSLeaf
     }
 }
 
+#region reservations
+[SHiPSProvider(UseCache=$true)]
+class Reservations : SHiPSDirectory
+{
+    [String] $ScopeId
+    [String] $DnsName
+    
+    Reservations ([String] $ScopeId, [String] $DnsName) :base($this.GetType())
+    {
+        $this.ScopeId = $ScopeId 
+        $this.DnsName = $DnsName
+    }
 
+    [Reservation[]] GetChildItem ()
+    {
+        $obj = New-Object -TypeName System.Collections.ArrayList
+        foreach ($reservation in $(Get-DhcpServerv4Reservation -ScopeId $this.ScopeId -ComputerName $this.DnsName)) {
+            $obj.Add([Reservation]::new($this.ScopeId, $this.DnsName, $reservation))
+        }
+        return $obj
+    }
+
+}
+
+
+[SHiPSProvider(UseCache=$true)]
+class Reservation : SHiPSLeaf
+{
+    [String] $ScopeId
+    [String] $ClientId
+    [String] $Name
+    [String] $Type
+    [String] $IPAddress
+    [String] $AddressState
+    [String] $Description
+    [String] $DnsName
+
+    Reservation ([String] $ScopeId, [String] $DnsName, [Object] $InputObject) :base($InputObject.Name)
+    {
+        $this.ScopeId = $ScopeId
+        $this.DnsName = $DnsName
+        $this.ClientId = $InputObject.ClientId
+        $this.Name = $InputObject.Name
+        $this.Type = $InputObject.Type
+        $this.IPAddress = $InputObject.IPAddress
+        $this.AddressState = $InputObject.AddressState
+        $this.Description = $InputObject.Description
+    }
+}
+#endregion reservations
+
+#region AddressLeases
+[SHiPSProvider(UseCache=$true)]
+class AddressLeases : SHiPSDirectory
+{
+    [String] $ScopeId
+    [String] $DnsName
+    
+    AddressLeases ([String] $ScopeId, [String] $DnsName) :base($this.GetType())
+    {
+        $this.ScopeId = $ScopeId 
+        $this.DnsName = $DnsName
+    }
+
+    [AddressLease[]] GetChildItem ()
+    {
+        $obj = New-Object -TypeName System.Collections.ArrayList
+        foreach ($reservation in $(Get-DhcpServerv4Lease -ScopeId $this.ScopeId -ComputerName $this.DnsName)) {
+            $obj.Add([AddressLease]::new($this.ScopeId, $this.DnsName, $reservation))
+        }
+        return $obj
+    }
+
+}
+
+
+[SHiPSProvider(UseCache=$true)]
+class AddressLease : SHiPSLeaf
+{
+    [String] $AddressState
+    [String] $ClientId
+    [String] $ClientType
+    [String] $Description
+    [String] $DnsRegistration
+    [String] $DnsRR
+    [String] $HostName
+    [String] $LeaseExpiryTime
+    [bool] $NapCapable
+    [String] $NapStatus
+    [String] $PolicyName
+    [String] $ProbationEnds
+    [String] $ServerIP
+    [String] $ScopeId
+    [String] $DnsName
+
+    AddressLease ([String] $ScopeId, [String] $DnsName, [Object] $InputObject) :base($InputObject.IPAddress)
+    {
+        $this.ScopeId = $ScopeId
+        $this.DnsName = $DnsName
+        $this.ClientId = $InputObject.ClientId
+        $this.Name = $InputObject.Name
+        $this.Type = $InputObject.Type
+        $this.IPAddress = $InputObject.IPAddress
+        $this.AddressState = $InputObject.AddressState
+        $this.Description = $InputObject.Description
+    }
+}
+
+#endregion AddressLeases
 Function Convert-PSObjectToHashTable {
     [CmdletBinding()]
     param(
