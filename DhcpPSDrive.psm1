@@ -3,6 +3,9 @@ using namespace Microsoft.PowerShell.SHiPS
 [SHiPSProvider(UseCache=$true)]
 class DhcpPSDrive : SHiPSDirectory
 {
+    #static [System.Collections.ArrayList] $DHCPServers
+    static [System.Collections.Generic.List``1[Microsoft.Management.Infrastructure.CimSession]] $Sessions
+
     DhcpPSDrive ([String]$name) : base($name)
     {
 
@@ -11,11 +14,14 @@ class DhcpPSDrive : SHiPSDirectory
     [object[]] GetChildItem()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        foreach ($DhcpServer in (Get-DhcpServerInDC | Where-Object -FilterScript {$PSitem.DnsName -eq 'stg-dhcp02.stage.linkedin.biz'}))
-        {
-            $obj.Add([DhcpServer]::new($DhcpServer))
+        if([DhcpPSDrive]::sessions){
+            [DhcpPSDrive]::sessions | ForEach-Object {
+                $obj += [DhcpServer]::new($_.ComputerName, $_)
+            }
         }
-        
+        else{
+            $obj += [DhcpPSDrive]::new('localhost')
+        }
         return $obj
     }
 }
@@ -34,42 +40,32 @@ class DhcpServer : SHiPSDirectory
     [int] $DynamicDnsQueueLength
     [hashtable] $IPv4Binding
     [hashtable] $Ipv6Binding
+    [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
     
     # Constructor used for mounting a PSDrive for the local DNS Server
-    DhcpServer ([string] $name) :base($env:COMPUTERNAME)
+    DhcpServer ([string] $name) :base($name)
     {
-        $this.DnsName = $env:COMPUTERNAME
-        $DnsService = Get-Service -Name DhcpServer
-        if ($DnsService.Status -eq 'Running')
-        {
-            $this.IPAddress = Resolve-DnsName -Name $env:COMPUTERNAME -Type A -DnsOnly | Select-Object -First 1 | Select-Object -ExpandProperty IPAddress
-        }
-        else 
-        {
-            Throw "DNS service is not running on $($this.DnsName)"
-        }
-        
+        $this.CimSession = New-CimSession -ComputerName $name
         $this.InitializeDHCPServerProperties()
     }
 
-    DhcpServer ([object]$InputObject) : base($InputObject.DnsName)
+    DhcpServer([string]$name, [Microsoft.Management.Infrastructure.CimSession]$cimsession):base($name)
     {
-        $this.DnsName           = $InputObject.DnsName
-        $this.IPAddress         = $InputObject.IPAddress
-        $this.InitializeDHCPServerProperties()
+        $this.CimSession = $cimsession
     }
+
 
     InitializeDHCPServerProperties ()
     {
         try 
         {
-            $this.MsReleaseLease    = Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 2 -VendorClass 'Microsoft Options' -ErrorAction SilentlyContinue | 
+            $this.MsReleaseLease    = Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 2 -VendorClass 'Microsoft Options' -ErrorAction SilentlyContinue | 
                                     Select-Object -ExpandProperty Value
-            $this.TimeList          = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 4 -ErrorAction SilentlyContinue ).Value
-            $this.DnsList           = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 6 -ErrorAction SilentlyContinue ).Value
-            $this.DomainList        = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 15 -ErrorAction SilentlyContinue ).Value
-            $this.NtpList           = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 42 -ErrorAction SilentlyContinue ).Value
-            $this.UcTftpCallMgrList = ( Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -OptionId 150 -ErrorAction SilentlyContinue ).Value
+            $this.TimeList          = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 4 -ErrorAction SilentlyContinue ).Value
+            $this.DnsList           = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 6 -ErrorAction SilentlyContinue ).Value
+            $this.DomainList        = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 15 -ErrorAction SilentlyContinue ).Value
+            $this.NtpList           = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 42 -ErrorAction SilentlyContinue ).Value
+            $this.UcTftpCallMgrList = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 150 -ErrorAction SilentlyContinue ).Value
             $this.IPv4Binding       = Get-DhcpServerv4Binding | Convert-PSObjectToHashTable
             $this.Ipv6Binding       = Get-DhcpServerv6Binding | Convert-PSObjectToHashTable
             $this.DynamicDnsQueueLength = Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\DhcpServer\Parameters `
@@ -86,19 +82,19 @@ class DhcpServer : SHiPSDirectory
     [object[]] GetChildItem()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        $obj.Add([IPv4]::new($this.DnsName))
+        $obj.Add([IPv4]::new($this.DnsName, $this.CimSession))
         #$obj.Add([IPv6]::new($this.DnsName))
         return $obj 
     }
 
     [Microsoft.Management.Infrastructure.CimInstance[]] DisplayV4Statistics ()
     {
-        return $(Get-DhcpServerv4Statistics -ComputerName $this.DnsName)
+        return $(Get-DhcpServerv4Statistics -CimSession $this.CimSession)
     }
 
     [Microsoft.Management.Infrastructure.CimInstance[]] DisplayV6Statistics ()
     {
-        return $(Get-DhcpServerv6Statistics -ComputerName $this.DnsName)
+        return $(Get-DhcpServerv6Statistics -CimSession $this.CimSession)
     }
 }
 
@@ -107,8 +103,9 @@ class DhcpServer : SHiPSDirectory
 class IPv4 : SHiPSDirectory
 {
     [String] $DnsName
+    [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
-    IPv4 ([string]$DnsName) :base($this.GetType())
+    IPv4 ([string]$DnsName, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
         $this.DnsName = $DnsName
     }
@@ -116,10 +113,10 @@ class IPv4 : SHiPSDirectory
     [object[]] GetChildItem()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        $v4Scopes = @(Get-DhcpServerv4Scope -ComputerName $this.DnsName)
+        $v4Scopes = @(Get-DhcpServerv4Scope -CimSession $this.CimSession)
         foreach ($v4Scope in $v4Scopes)
         {
-            $obj.Add([v4Scope]::new($v4Scope, $this.DnsName))
+            $obj.Add([v4Scope]::new($v4Scope, $this.DnsName, $this.CimSession))
         }
         return $obj
     }
@@ -138,8 +135,9 @@ class v4Scope : SHiPSDirectory
     [String] $EndRange
     [string] $LeaseDuration
     [hashtable] $DNSSettings
+    [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
-    v4Scope([object] $InputObject, [string] $DnsName) :base($InputObject.Name)
+    v4Scope([object] $InputObject, [string] $DnsName, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.Name)
     {
         $this.Name          = $InputObject.Name
         $this.ScopeId       = $InputObject.ScopeId
@@ -149,9 +147,10 @@ class v4Scope : SHiPSDirectory
         $this.EndRange      = $InputObject.EndRange
         $this.LeaseDuration = $InputObject.LeaseDuration
         $this.DnsName       = $DnsName
+        $this.CimSession    = $CimSession
 
         # Populate the DNS Settings hashtable
-        $DnsSetting = Get-DhcpServerv4DnsSetting -ComputerName $this.DnsName -ScopeId $this.ScopeId -ErrorAction SilentlyContinue
+        $DnsSetting = Get-DhcpServerv4DnsSetting -CimSession $this.CimSession -ScopeId $this.ScopeId -ErrorAction SilentlyContinue
         $this.DNSSettings = Convert-PSObjectToHashTable -InputObject $DnsSetting
 
     }
@@ -159,15 +158,15 @@ class v4Scope : SHiPSDirectory
     [object[]] GetChildItem()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        $obj.Add([ScopeOptions]::new($this.ScopeId, $this.DnsName))
-        $obj.Add([Reservations]::new($this.ScopeId, $this.DnsName))
-        $obj.Add([AddressLeases]::new($this.ScopeId, $this.DnsName))
+        $obj.Add([ScopeOptions]::new($this.ScopeId, $this.DnsName, $this.CimSession))
+        $obj.Add([Reservations]::new($this.ScopeId, $this.DnsName, $this.CimSession))
+        $obj.Add([AddressLeases]::new($this.ScopeId, $this.DnsName, $this.CimSession))
         return $obj
     }
 
     [Microsoft.Management.Infrastructure.CimInstance[]] DisplayStatistics ()
     {
-        return $(Get-DhcpServerv4ScopeStatistics -ComputerName $this.DnsName -ScopeId $this.ScopeId)
+        return $(Get-DhcpServerv4ScopeStatistics -CimSession $this.CimSession -ScopeId $this.ScopeId)
     }
 
     ReplicateScope ()
@@ -193,11 +192,13 @@ class ScopeOptions : SHiPSDirectory
 {
     [String] $ScopeId
     [String] $DnsName
+    [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
     
-    ScopeOptions ([String] $ScopeId, [String] $DnsName) :base($this.GetType())
+    ScopeOptions ([String] $ScopeId, [String] $DnsName, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
-        $this.ScopeId = $ScopeId 
-        $this.DnsName = $DnsName
+        $this.ScopeId       = $ScopeId 
+        $this.DnsName       = $DnsName
+        $this.CimSession    = $CimSession
     }
 
     [object[]] GetChildItem()
@@ -245,11 +246,13 @@ class v4ScopeOption : SHiPSLeaf
     [String] $OptionId
     [String] $Name
     [object] $Value
+    [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
-    v4ScopeOption ([String] $ScopeId, [String] $DnsName, [hashtable] $ScopeOption) :base("$($ScopeOption['OptionId']) $($ScopeOption['Name'])")
+    v4ScopeOption ([String] $ScopeId, [String] $DnsName, [hashtable] $ScopeOption, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base("$($ScopeOption['OptionId']) $($ScopeOption['Name'])")
     {
         $this.ScopeId = $ScopeId
         $this.DnsName = $DnsName
+        $this.CimSession = $CimSession
         $this.Name = $ScopeOption['Name']
         $this.OptionId = $ScopeOption['OptionId']
 
@@ -263,7 +266,7 @@ class v4ScopeOption : SHiPSLeaf
         }
 
         $null = $ScopeOption.Remove('Name')
-        $this.Value = Get-DhcpServerv4OptionValue -ComputerName $this.DnsName -ScopeId $this.ScopeId @ScopeOption -ErrorAction SilentlyContinue |
+        $this.Value = Get-DhcpServerv4OptionValue -CimSession $this.CimSession -ScopeId $this.ScopeId @ScopeOption -ErrorAction SilentlyContinue |
                             Select-Object -ExpandProperty Value
         
     }
@@ -275,17 +278,19 @@ class Reservations : SHiPSDirectory
 {
     [String] $ScopeId
     [String] $DnsName
+    [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
     
-    Reservations ([String] $ScopeId, [String] $DnsName) :base($this.GetType())
+    Reservations ([String] $ScopeId, [String] $DnsName, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
-        $this.ScopeId = $ScopeId 
-        $this.DnsName = $DnsName
+        $this.ScopeId       = $ScopeId 
+        $this.DnsName       = $DnsName
+        $this.CimSession    = $CimSession
     }
 
     [Reservation[]] GetChildItem ()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        foreach ($reservation in $(Get-DhcpServerv4Reservation -ScopeId $this.ScopeId -ComputerName $this.DnsName)) {
+        foreach ($reservation in $(Get-DhcpServerv4Reservation -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
             $obj.Add([Reservation]::new($this.ScopeId, $this.DnsName, $reservation))
         }
         return $obj
@@ -306,7 +311,7 @@ class Reservation : SHiPSLeaf
     [String] $Description
     [String] $DnsName
 
-    Reservation ([String] $ScopeId, [String] $DnsName, [Object] $InputObject) :base($InputObject.Name)
+    Reservation ([String] $ScopeId, [String] $DnsName, [Object] $InputObject, ) :base($InputObject.Name)
     {
         $this.ScopeId = $ScopeId
         $this.DnsName = $DnsName
@@ -326,17 +331,20 @@ class AddressLeases : SHiPSDirectory
 {
     [String] $ScopeId
     [String] $DnsName
+    [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
+
     
-    AddressLeases ([String] $ScopeId, [String] $DnsName) :base($this.GetType())
+    AddressLeases ([String] $ScopeId, [String] $DnsName, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
-        $this.ScopeId = $ScopeId 
-        $this.DnsName = $DnsName
+        $this.ScopeId       = $ScopeId 
+        $this.DnsName       = $DnsName
+        $this.CimSession    = $CimSession
     }
 
     [AddressLease[]] GetChildItem ()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        foreach ($reservation in $(Get-DhcpServerv4Lease -ScopeId $this.ScopeId -ComputerName $this.DnsName)) {
+        foreach ($reservation in $(Get-DhcpServerv4Lease -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
             $obj.Add([AddressLease]::new($this.ScopeId, $this.DnsName, $reservation))
         }
         return $obj
@@ -400,3 +408,58 @@ Function Convert-PSObjectToHashTable {
         return $returnHashTable
     }
 }
+
+
+#region cmdlets
+
+function Get-CMSession {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ComputerName
+    )    
+    [DhcpPSDrive]::Sessions | Where-Object {$_.ComputerName -eq $ComputerName}
+}
+
+
+function Connect-DHCPServer {
+    [CmdletBinding()]
+    param(
+        # Specify the list of DHCP servers to connect to
+        [Parameter(Mandatory = $true)]
+        [string] $ComputerName,
+
+        # Specify the credentials used to connect.
+        [Parameter()]
+        [pscredential] $Credential
+
+    )
+
+    if (Get-DHCPSession -ComputerName $ComputerName)
+    {
+        Write-Verbose -Message "Already connected to DHCP Server $ComputerName. Skipping ..."
+    }
+    else
+    {
+        ([DhcpPSDrive]::Sessions).Add((New-CimSession -ComputerName $ComputerName -Credential $Credential)) 
+    }
+}
+
+
+function Disconnect-DHCPServer {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ComputerName
+    )
+    $sessionToRemove = Get-DHCPSession -ComputerName $ComputerName
+
+    if($sessionToRemove){
+        if(([DhcpPSDrive]::Sessions).Remove($sessionToRemove)){
+            Remove-CimSession -CimSession $sessionToRemove -ErrorAction Stop
+        }
+    }
+    else{
+        Write-Verbose -Verbose -Message "No connection to DHCP Server $ComputerName. Skipping ..."        
+    }
+}
+#endregion cmdlets
