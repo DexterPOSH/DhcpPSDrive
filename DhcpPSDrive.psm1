@@ -1,6 +1,6 @@
 using namespace Microsoft.PowerShell.SHiPS
 
-[SHiPSProvider(UseCache=$true)]
+[SHiPSProvider()]
 class DhcpPSDrive : SHiPSDirectory
 {
     #static [System.Collections.ArrayList] $DHCPServers
@@ -46,7 +46,12 @@ class DhcpServer : SHiPSDirectory
     DhcpServer ([string] $name) :base($name)
     {
         $this.CimSession = New-CimSession -ComputerName $name
-        $this.InitializeDHCPServerProperties()
+        if (Get-DhcpServerSetting -CimSession $this.CimSession) # Check if it is a DHCP Server first
+        {
+            [DhcpPSDrive]::Sessions += $this.CimSession
+            $this.InitializeDHCPServerProperties()
+        }
+        
     }
 
     DhcpServer([string]$name, [Microsoft.Management.Infrastructure.CimSession]$cimsession):base($name)
@@ -107,7 +112,8 @@ class IPv4 : SHiPSDirectory
 
     IPv4 ([string]$DnsName, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
-        $this.DnsName = $DnsName
+        $this.DnsName       = $DnsName
+        $this.CimSession    = $CimSession
     }
 
     [object[]] GetChildItem()
@@ -311,7 +317,7 @@ class Reservation : SHiPSLeaf
     [String] $Description
     [String] $DnsName
 
-    Reservation ([String] $ScopeId, [String] $DnsName, [Object] $InputObject, ) :base($InputObject.Name)
+    Reservation ([String] $ScopeId, [String] $DnsName, [Object] $InputObject) :base($InputObject.Name)
     {
         $this.ScopeId = $ScopeId
         $this.DnsName = $DnsName
@@ -435,13 +441,22 @@ function Connect-DHCPServer {
 
     )
 
-    if (Get-DHCPSession -ComputerName $ComputerName)
+    if (Get-CMSession -ComputerName $ComputerName)
     {
         Write-Verbose -Message "Already connected to DHCP Server $ComputerName. Skipping ..."
     }
     else
     {
-        ([DhcpPSDrive]::Sessions).Add((New-CimSession -ComputerName $ComputerName -Credential $Credential)) 
+        if ([DhcpPSDrive]::Sessions)
+        {
+            ([DhcpPSDrive]::Sessions).Add((New-CimSession -ComputerName $ComputerName -Credential $Credential)) 
+        }
+        else
+        {
+            [DhcpPSDrive]::Sessions += New-CimSession -ComputerName $ComputerName -Credential $Credential
+        }
+
+        
     }
 }
 
@@ -463,3 +478,5 @@ function Disconnect-DHCPServer {
     }
 }
 #endregion cmdlets
+
+Export-ModuleMember -Function 'Connect-DHCPServer','Disconnect-DHCPServer'
