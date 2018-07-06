@@ -1,12 +1,12 @@
 using namespace Microsoft.PowerShell.SHiPS
 
 [SHiPSProvider()]
-class DhcpPSDrive : SHiPSDirectory
+class DhcpRoot : SHiPSDirectory
 {
     #static [System.Collections.ArrayList] $DHCPServers
     static [System.Collections.Generic.List``1[Microsoft.Management.Infrastructure.CimSession]] $Sessions
 
-    DhcpPSDrive ([String]$name) : base($name)
+    DhcpRoot ([String]$name) : base($name)
     {
 
     }
@@ -14,13 +14,13 @@ class DhcpPSDrive : SHiPSDirectory
     [object[]] GetChildItem()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        if([DhcpPSDrive]::sessions){
-            [DhcpPSDrive]::sessions | ForEach-Object {
+        if([DhcpRoot]::sessions){
+            [DhcpRoot]::sessions | ForEach-Object {
                 $obj += [DhcpServer]::new($_.ComputerName, $_)
             }
         }
         else{
-            $obj += [DhcpPSDrive]::new('localhost')
+            $obj += [DhcpServer]::new('localhost')
         }
         return $obj
     }
@@ -40,6 +40,7 @@ class DhcpServer : SHiPSDirectory
     [int] $DynamicDnsQueueLength
     [hashtable] $IPv4Binding
     [hashtable] $Ipv6Binding
+    
     hidden [Microsoft.Management.Infrastructure.CimSession] $CimSession = $null
     
     # Constructor used for mounting a PSDrive for the local DNS Server
@@ -48,7 +49,7 @@ class DhcpServer : SHiPSDirectory
         $this.CimSession = New-CimSession -ComputerName $name
         if (Get-DhcpServerSetting -CimSession $this.CimSession) # Check if it is a DHCP Server first
         {
-            [DhcpPSDrive]::Sessions += $this.CimSession
+            [DhcpRoot]::Sessions += $this.CimSession
             $this.InitializeDHCPServerProperties()
         }
         
@@ -65,7 +66,7 @@ class DhcpServer : SHiPSDirectory
         try 
         {
             $this.MsReleaseLease    = Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 2 -VendorClass 'Microsoft Options' -ErrorAction SilentlyContinue | 
-                                    Select-Object -ExpandProperty Value
+                                        Select-Object -ExpandProperty Value
             $this.TimeList          = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 4 -ErrorAction SilentlyContinue ).Value
             $this.DnsList           = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 6 -ErrorAction SilentlyContinue ).Value
             $this.DomainList        = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 15 -ErrorAction SilentlyContinue ).Value
@@ -76,6 +77,8 @@ class DhcpServer : SHiPSDirectory
             $this.DynamicDnsQueueLength = Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\DhcpServer\Parameters `
                                             -Name DynamicDNSQueueLength -ErrorAction SilentlyContinue |
                                                 Select-Object -ExpandProperty DynamicDNSQueueLength
+            
+                                
         }
         catch
         {
@@ -107,11 +110,16 @@ class DhcpServer : SHiPSDirectory
 [SHiPSProvider(UseCache=$true)]
 class IPv4 : SHiPSDirectory
 {
+    [hashtable] $DNSSetting
+    [hashtable[]] $FailoverRelationShips
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
     IPv4 ([Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
         $this.CimSession    = $CimSession
+        $this.DnsSetting = Get-DhcpServerv4DnsSetting -CimSession $this.CimSession -ErrorAction SilentlyContinue |
+                            Convert-PSObjectToHashTable
+        $this.FailoverRelationShips = Get-DhcpServerv4Failover -CimSession $this.CimSession | Convert-PSObjectToHashTable
     }
 
     [object[]] GetChildItem()
@@ -136,7 +144,8 @@ class v4Scope : SHiPSDirectory
     [String] $StartRange
     [String] $EndRange
     [string] $LeaseDuration
-    [hashtable] $DNSSettings
+    [hashtable] $DNSSetting
+    [hashtable] $FailoverRelationShip
     hidden [String] $ScopeId
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
@@ -152,8 +161,10 @@ class v4Scope : SHiPSDirectory
         $this.CimSession    = $CimSession
 
         # Populate the DNS Settings hashtable
-        $DnsSetting = Get-DhcpServerv4DnsSetting -CimSession $this.CimSession -ScopeId $this.ScopeId -ErrorAction SilentlyContinue
-        $this.DNSSettings = Convert-PSObjectToHashTable -InputObject $DnsSetting
+        $this.DNSSetting = Get-DhcpServerv4DnsSetting -CimSession $this.CimSession -ScopeId $this.ScopeId |
+                                Convert-PSObjectToHashTable
+        $this.FailoverRelationShip = Get-DhcpServerv4Failover -CimSession $this.CimSession -ScopeId $this.ScopeId  -ErrorAction SilentlyContinue|
+                                        Convert-PSObjectToHashTable
 
     }
 
@@ -383,17 +394,25 @@ class AddressLease : SHiPSLeaf
 function Get-CMSession {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
+        [Parameter()]
         [string]$ComputerName
-    )    
-    [DhcpPSDrive]::Sessions | Where-Object {$_.ComputerName -eq $ComputerName}
+    )
+    if ($ComputerName)
+    {
+        [DhcpRoot]::Sessions | Where-Object {$_.ComputerName -eq $ComputerName}
+    }
+    else
+    {
+        [DhcpRoot]::Sessions
+    }
+    
 }
 
 
 function Connect-DHCPServer {
     <#
         .SYNOPSIS
-            Allows to connect to a DHCP Server, the connected server then reflects inside the DHCPPsDrive
+            Allows to connect to a DHCP Server, the connected server then reflects inside the DhcpRoot
         .DESCRIPTION
             The function allows to connect to any DHCP Server (supports passing credentials), it uses CIM sessions in the backend.
         .EXAMPLE
@@ -417,15 +436,14 @@ function Connect-DHCPServer {
     }
     else
     {
-        if ([DhcpPSDrive]::Sessions)
+        if ([DhcpRoot]::Sessions)
         {
-            ([DhcpPSDrive]::Sessions).Add((New-CimSession -ComputerName $ComputerName -Credential $Credential)) 
+            ([DhcpRoot]::Sessions).Add((New-CimSession -ComputerName $ComputerName -Credential $Credential)) 
         }
         else
         {
-            [DhcpPSDrive]::Sessions += New-CimSession -ComputerName $ComputerName -Credential $Credential
+            [DhcpRoot]::Sessions += New-CimSession -ComputerName $ComputerName -Credential $Credential
         }
-
         
     }
 }
@@ -434,7 +452,7 @@ function Connect-DHCPServer {
 function Disconnect-DHCPServer {
         <#
         .SYNOPSIS
-            Allows to disconnect from a DHCP Server, the disconnected server then is removed from inside the DHCPPsDrive.
+            Allows to disconnect from a DHCP Server, the disconnected server then is removed from inside the DhcpRoot.
         .DESCRIPTION
             The function allows to disconnect to the current connected DHCP Server, it simply removes the CIM session for the DHCP server.
         .EXAMPLE
@@ -448,7 +466,7 @@ function Disconnect-DHCPServer {
     $sessionToRemove = Get-DHCPSession -ComputerName $ComputerName
 
     if($sessionToRemove){
-        if(([DhcpPSDrive]::Sessions).Remove($sessionToRemove)){
+        if(([DhcpRoot]::Sessions).Remove($sessionToRemove)){
             Remove-CimSession -CimSession $sessionToRemove -ErrorAction Stop
         }
     }
@@ -595,4 +613,4 @@ function Get-ShiPSItemAsPSObject {
 
 #endregion cmdlets
 
-Export-ModuleMember -Function 'Connect-DHCPServer','Export-PSDrive'
+Export-ModuleMember -Function 'Connect-DHCPServer','Disconnect-DHCPServer','Export-PSDrive','Get-CMSession'
