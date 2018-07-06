@@ -376,28 +376,6 @@ class AddressLease : SHiPSLeaf
 }
 
 #endregion AddressLeases
-Function Convert-PSObjectToHashTable {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true,
-                    ValueFromPipeline = $true)]
-        [object]$InputObject,
-
-        [Parameter()]
-        [String[]]$Exclude
-    )
-    Process
-    {
-        $returnHashTable = @{}
-        $InputObject | Get-Member -MemberType Property | Foreach-Object -Process {
-            if ($Exclude -notcontains $PSItem.Name)
-            {
-                $returnHashTable[$($PSItem.Name)] = $InputObject.$($PSItem.Name)
-            }
-        }
-        return $returnHashTable
-    }
-}
 
 
 #region cmdlets
@@ -413,9 +391,17 @@ function Get-CMSession {
 
 
 function Connect-DHCPServer {
+    <#
+        .SYNOPSIS
+            Allows to connect to a DHCP Server, the connected server then reflects inside the DHCPPsDrive
+        .DESCRIPTION
+            The function allows to connect to any DHCP Server (supports passing credentials), it uses CIM sessions in the backend.
+        .EXAMPLE
+            Connect-DHCPServer -ComputerName stg-dhcp01 -Credential (Get-Credential)
+    #>
     [CmdletBinding()]
     param(
-        # Specify the list of DHCP servers to connect to
+        # Specify the DHCP server to connect to
         [Parameter(Mandatory = $true)]
         [string] $ComputerName,
 
@@ -446,6 +432,15 @@ function Connect-DHCPServer {
 
 
 function Disconnect-DHCPServer {
+        <#
+        .SYNOPSIS
+            Allows to disconnect from a DHCP Server, the disconnected server then is removed from inside the DHCPPsDrive.
+        .DESCRIPTION
+            The function allows to disconnect to the current connected DHCP Server, it simply removes the CIM session for the DHCP server.
+        .EXAMPLE
+            Disconnect-DHCPServer -ComputerName stg-dhcp01
+    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ComputerName
@@ -461,6 +456,143 @@ function Disconnect-DHCPServer {
         Write-Verbose -Verbose -Message "No connection to DHCP Server $ComputerName. Skipping ..."        
     }
 }
+
+Function Convert-PSObjectToHashTable {
+    <#
+        .SYNOPSIS
+            Helper function to convert PSObjects to HAshtable
+        .DESCRIPTION
+            This function converts an input PSObject to a hashtable, it also
+            allows specifying the properties to exclude during the conversion.
+            It is used internally to map the PSDrive objects as Key-Value pairs for export.
+        .EXAMPLE
+            Convert-PSObjectToHashtable -InputObject (Get-Process -Name powershell) -Exlcude PID
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true,
+                    ValueFromPipeline = $true)]
+        [object]$InputObject,
+
+        [Parameter()]
+        [String[]]$Exclude
+    )
+    Process
+    {
+        $returnHashTable = @{}
+        $InputObject | Get-Member -MemberType Property | Foreach-Object -Process {
+            if ($Exclude -notcontains $PSItem.Name)
+            {
+                $returnHashTable[$($PSItem.Name)] = $InputObject.$($PSItem.Name)
+            }
+        }
+        return $returnHashTable
+    }
+}
+
+Function Export-PSDrive {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [String] $Name,
+
+        [Parameter()]
+        [ValidateSet('JSON','CLIXML')]
+        [String] $Type = 'JSON'
+    )
+    $PSDrive = Get-PSDriveAsPSObject -Name $Name -ErrorAction Stop
+
+    Switch -Exact ($Type)
+    {
+        'JSON'
+        {
+            Add-Content -Path "$PSScriptRoot\$Name.json" -Value  ($PSDrive | ConvertTo-Json ) -Depth 99
+            break
+        }
+        'CLIXML'
+        {
+            $PSDrive | Export-CLIXml -Depth 99 -Path "$PSScriptRoot\$Name.xml"
+            break
+        }
+    }
+}
+Function Get-PSDriveAsPSObject {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [String] $Name
+    )
+    $PSDrive =  Get-PSDrive -Name $Name -ErrorAction SilentlyContinue
+    if (-not $PSDrive)
+    {
+        throw "PSDrive with $name not found"
+    }
+    Push-Location
+    $path = Resolve-Path -Path $("{0}:/" -f $Name)
+    Set-Location -Path $Path
+    Get-ShiPSItemAsPSObject -Path $path
+    Pop-Location
+}
+
+
+
+function Get-ShiPSItemAsPSObject {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true,
+            ValueFromPipeline = $true)]
+        [String] $Path,
+
+        [Parameter()]
+        [string[]] $Exclude = @()
+    )
+    process
+    {
+        try {
+            $null = $Exclude.Add('ScopeId')
+            $null = $Exclude.Add('CimSession')
+        }
+        catch {
+        # swallow the error in above step
+        }
+        try 
+        {
+            
+            $Path = Resolve-Path -Path $Path -ErrorAction Stop | Select-Object -ExpandProperty Path
+        }
+        catch 
+        {
+            Throw "$Path not resolvable. $PSitem.Exception"
+        }
+        $Item = Get-Item -Path $Path
+        if ( $Item.PSIsContainer)
+        {
+            $psObject = [PSCustomObject]($Item | Convert-PSObjectToHashTable -Exclude $Exclude) # First capture all the item properties
+            Add-Member -InputObject $psObject -MemberType NoteProperty -Name Type -Value "$($Item.GetType().FullName)" -ErrorAction SilentlyContinue
+            $ChildItem = Get-ChildItem -Path $Path
+            if ($ChildItem)
+            {
+                # Add the childitem member
+                Add-Member -InputObject $psObject -MemberType NoteProperty -Name ChildItem -Value @()
+                Foreach ($child in (Get-ChildItem -Path $Path))
+                {
+                    if ($child.PSIsContainer)
+                    {
+                        $childPath = if ($Path[-1] -eq "\") {"$Path$($child.PSChildName)"} else {"$Path\$($child.PSChildName)"}
+                        $psObject.ChildItem += $(Get-ShiPSItemAsPSObject -Path $childPath -Exclude $Exclude)
+                    }
+                    else
+                    {
+                        $psObject.ChildItem += [PSCustomObject]($child | Convert-PSObjectToHashTable -Exclude $Exclude)
+                    }
+                }
+            }
+            
+        }
+        return $psObject
+    }
+}
+
 #endregion cmdlets
 
-Export-ModuleMember -Function 'Connect-DHCPServer','Disconnect-DHCPServer'
+Export-ModuleMember -Function 'Connect-DHCPServer','Export-PSDrive'
