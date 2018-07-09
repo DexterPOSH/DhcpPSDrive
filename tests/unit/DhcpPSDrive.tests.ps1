@@ -52,7 +52,11 @@ try
             }
 
             Context "Connect to a remote DHCP server" {
-                Mock -CommandName Connect-DHCPServer -MockWith {[DhcpRoot]::Sessions += New-CimSession -ComputerName $env:COMPUTERNAME}
+                Mock -CommandName Connect-DHCPServer -MockWith {
+                    if (-not [DhcpRoot]::Sessions) {
+                        [DhcpRoot]::Sessions += New-CimSession -ComputerName $env:COMPUTERNAME
+                    }
+                }
                 
                 Connect-DHCPServer -ComputerName dummyDHCPServer 
                 $RemoteDhcpServer = Get-Item -Path "DhcpServers:\$env:COMPUTERNAME" 
@@ -66,7 +70,44 @@ try
                     $RemoteDhcpServer.SSItemMode | Should -Be '+'
                     ($RemoteDhcpServer | Measure-Object).Count | Should -Be 1
                 }
+
+                It "Should connect to the remote machine using CIM" {
+                    Assert-MockCalled -CommandName Connect-DHCPServer
+                }
                
+            }
+
+            Context "Loads the Dhcp Server specific attributes when initialized" {
+                Mock -CommandName Connect-DHCPServer -MockWith {
+                    if (-not [DhcpRoot]::Sessions) {
+                        [DhcpRoot]::Sessions += New-CimSession -ComputerName $env:COMPUTERNAME
+                    }
+                }
+                Mock -CommandName Get-DhcpServerSetting -MockWith {$true} 
+                Mock -CommandName Get-DhcpServerv4OptionValue -MockWith {[pscustomobject]@{Value='dummy'}} -ModuleName $ENV:BHProjectName -ParameterFilter { -not [string]::IsNullOrEmpty($CimSession)}
+                Mock -CommandName Get-DhcpServerv4Binding -MockWith {[pscustomobject]@{key='ipv4'; value='Bind'}} -ModuleName $ENV:BHProjectName -ParameterFilter { -not [string]::IsNullOrEmpty($CimSession)}
+                Mock -CommandName Get-DhcpServerv6Binding -MockWith {[pscustomobject]@{key='ipv6'; value='Bind'}} -ModuleName $ENV:BHProjectName -ParameterFilter { -not [string]::IsNullOrEmpty($CimSession)}
+
+                
+                $RemoteDhcpServer = [DhcpServer]::new($env:COMPUTERNAME)
+
+                It "Should query the remote DHCP server to fetch V4 Option Values" {
+                    Assert-MockCalled -CommandName Get-DhcpServerv4OptionValue -Times 6 -Exactly
+                }
+
+                It "Should set the returned value on the attributes for Option value" {
+                    $RemoteDhcpServer.MsReleaseLease | Should -Be 'dummy'
+                    $RemoteDhcpServer.TimeList | Should -Be 'dummy'
+                    $RemoteDhcpServer.DnsList | Should -Be 'dummy'
+                    $RemoteDhcpServer.DomainList | Should -Be 'dummy'
+                    $RemoteDhcpServer.NtpList | Should -Be 'dummy'
+                    $RemoteDhcpServer.UcTftpCallMgrList | Should -Be 'dummy'
+                }
+
+                It "Should query & populate IPv4 & IPv6 binding" {
+                    Assert-MockCalled -CommandName Get-DhcpServerv4Binding -Times 1 -Exactly
+                    Assert-MockCalled -CommandName Get-DhcpServerv6Binding -Times 1 -Exactly
+                }
             }
         }
     }
