@@ -38,8 +38,8 @@ class DhcpServer : SHiPSDirectory
     [String[]] $NtpList
     [String[]] $UcTftpCallMgrList
     [int] $DynamicDnsQueueLength
-    [hashtable] $IPv4Binding
-    [hashtable] $Ipv6Binding
+    [hashtable[]] $IPv4Binding
+    [hashtable[]] $Ipv6Binding
     
     hidden [Microsoft.Management.Infrastructure.CimSession] $CimSession = $null
     
@@ -65,6 +65,7 @@ class DhcpServer : SHiPSDirectory
     {
         try 
         {
+            Write-Verbose -Message "Setting Dhcp Server properties..." -Verbose
             $this.MsReleaseLease    = Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 2 -VendorClass 'Microsoft Options' -ErrorAction SilentlyContinue | 
                                         Select-Object -ExpandProperty Value
             $this.TimeList          = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 4 -ErrorAction SilentlyContinue ).Value
@@ -72,13 +73,14 @@ class DhcpServer : SHiPSDirectory
             $this.DomainList        = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 15 -ErrorAction SilentlyContinue ).Value
             $this.NtpList           = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 42 -ErrorAction SilentlyContinue ).Value
             $this.UcTftpCallMgrList = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 150 -ErrorAction SilentlyContinue ).Value
-            $this.IPv4Binding       = Get-DhcpServerv4Binding | Convert-PSObjectToHashTable
-            $this.Ipv6Binding       = Get-DhcpServerv6Binding | Convert-PSObjectToHashTable
+            $this.IPv4Binding       = Get-DhcpServerv4Binding -CimSession $this.CimSession -ErrorAction SilentlyContinue | Convert-PSObjectToHashTable
+            $this.Ipv6Binding       = Get-DhcpServerv6Binding -CimSession $this.CimSession -ErrorAction SilentlyContinue | Convert-PSObjectToHashTable
+            <#
             $this.DynamicDnsQueueLength = Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\DhcpServer\Parameters `
                                             -Name DynamicDNSQueueLength -ErrorAction SilentlyContinue |
                                                 Select-Object -ExpandProperty DynamicDNSQueueLength
-            
-                                
+            #>
+            Write-Verbose -Message "Setting Dhcp Server properties done." -Verbose
         }
         catch
         {
@@ -490,6 +492,7 @@ Function Convert-PSObjectToHashTable {
     param(
         [Parameter(Mandatory = $true,
                     ValueFromPipeline = $true)]
+        [AllowNull()]
         [object]$InputObject,
 
         [Parameter()]
@@ -497,14 +500,19 @@ Function Convert-PSObjectToHashTable {
     )
     Process
     {
-        $returnHashTable = @{}
-        $InputObject | Get-Member -MemberType Property | Foreach-Object -Process {
-            if ($Exclude -notcontains $PSItem.Name)
-            {
-                $returnHashTable[$($PSItem.Name)] = $InputObject.$($PSItem.Name)
+        if ($InputObject)
+        {
+            $returnHashTable = @{}
+            $InputObject | Get-Member -MemberType Property | Foreach-Object -Process {
+                if ($Exclude -notcontains $PSItem.Name)
+                {
+                    $returnHashTable[$($PSItem.Name)] = $InputObject.$($PSItem.Name)
+                }
             }
+            return $returnHashTable
         }
-        return $returnHashTable
+        
+        
     }
 }
 
