@@ -126,14 +126,18 @@ class IPv4 : SHiPSDirectory
 {
     [hashtable] $DNSSetting
     [hashtable[]] $FailoverRelationShips
+    [hashtable[]] $ServerOptions
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
     IPv4 ([Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
-        $this.CimSession    = $CimSession
-        $this.DnsSetting = Get-DhcpServerv4DnsSetting -CimSession $this.CimSession -ErrorAction SilentlyContinue |
-                            Convert-PSObjectToHashTable
-        $this.FailoverRelationShips = Get-DhcpServerv4Failover -CimSession $this.CimSession | Convert-PSObjectToHashTable
+        $this.CimSession            = $CimSession
+        $this.DnsSetting            = Get-DhcpServerv4DnsSetting -CimSession $this.CimSession -ErrorAction SilentlyContinue |
+                                        Convert-PSObjectToHashTable
+        $this.FailoverRelationShips = Get-DhcpServerv4Failover -CimSession $this.CimSession |
+                                            Convert-PSObjectToHashTable
+        $this.ServerOptions         = Get-DhcpServerv4OptionValue -CimSession $This.CimSession -ErrorAction SilentlyContinue |
+                                            Convert-PSObjectToHashTable
     }
 
     [object[]] GetChildItem()
@@ -163,7 +167,7 @@ class v4Scope : SHiPSDirectory
     hidden [String] $ScopeId
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
-    v4Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.ScopeId)
+    v4Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.Name)
     {
         $this.Name          = $InputObject.Name
         $this.ScopeId       = $InputObject.ScopeId
@@ -198,11 +202,11 @@ class v4Scope : SHiPSDirectory
     }
 }
 
-[SHiPSProvider(UseCache=$true)]
+[SHiPSProvider(UseCache=$True)]
 class ScopeOptions : SHiPSDirectory
 {
-    hidden [String] $ScopeId
-    hidden [String] $Prefix
+    hidden [String] $ScopeId = $Null
+    hidden [String] $Prefix = $Null
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
     
     ScopeOptions ([String] $ScopeId, [String] $Prefix, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
@@ -259,6 +263,7 @@ class v4ScopeOption : SHiPSLeaf
 class Reservations : SHiPSDirectory
 {
     hidden [String] $ScopeId
+    hidden [String] $Prefix
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
     
     Reservations ([String] $ScopeId, [String] $Prefix, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
@@ -281,7 +286,7 @@ class Reservations : SHiPSDirectory
         elseif ($this.Prefix)
         {
             foreach ($v6Reservation in $(Get-DhcpServerv6Reservation -Prefix $this.Prefix -CimSession $this.CimSession)) {
-                $obj.Add([v4Reservation]::new($this.Prefix, $v6Reservation))
+                $obj.Add([v6Reservation]::new($this.Prefix, $v6Reservation))
             }
         }
         
@@ -320,6 +325,7 @@ class v4Reservation : SHiPSLeaf
 class AddressLeases : SHiPSDirectory
 {
     hidden [String] $ScopeId
+    hidden [String] $Prefix
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
     
@@ -327,15 +333,26 @@ class AddressLeases : SHiPSDirectory
     {
         $this.ScopeId       = $ScopeId 
         $this.CimSession    = $CimSession
+        $this.Prefix        = $Prefix
     }
 
     [v4AddressLease[]] GetChildItem ()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        foreach ($v4Reservation in $(Get-DhcpServerv4Lease -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
-            $obj.Add([v4AddressLease]::new($this.ScopeId, $v4Reservation))
+        if ($this.ScopeId)
+        {
+            foreach ($v4Lease in $(Get-DhcpServerv4Lease -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
+                $obj.Add([v4AddressLease]::new($this.ScopeId, $v4Lease))
+            }
+        }
+        elseif ($this.Prefix)
+        {
+            foreach ($v6Lease in $(Get-DhcpServerv4Lease -Prefix $this.Prefix -CimSession $this.CimSession)) {
+                $obj.Add([v4AddressLease]::new($this.Prefix, $v6Lease))
+            }
         }
         return $obj
+
     }
 
 }
@@ -383,11 +400,12 @@ class Exclusions : SHiPSDirectory {
     {
         $this.ScopeId       = $ScopeId 
         $this.CimSession    = $CimSession
+        $this.Prefix        = $Prefix
     }
 
     [v4Exclusion[]] GetChildItem() {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        if ($this.ScopedId)
+        if ($this.ScopeId)
         {
             foreach ($v4Reservation in $(Get-DhcpServerv4ExclusionRange -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
                 $obj.Add([v4Exclusion]::new($this.ScopeId, $v4Reservation))
@@ -427,13 +445,16 @@ class v4Exclusion : SHiPSLeaf {
 class IPv6 : SHiPSDirectory
 {
     [hashtable] $DNSSetting
+    [hashtable[]] $ServerOptions
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
     IPv6 ([Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
     {
         $this.CimSession    = $CimSession
-        $this.DnsSetting = Get-DhcpServerv6DnsSetting -CimSession $this.CimSession -ErrorAction SilentlyContinue |
-                            Convert-PSObjectToHashTable
+        $this.DnsSetting    = Get-DhcpServerv6DnsSetting -CimSession $this.CimSession -ErrorAction SilentlyContinue |
+                                Convert-PSObjectToHashTable
+        $this.ServerOptions = Get-DhcpServerv6OptionValue -CimSession $This.CimSession -ErrorAction SilentlyContinue |
+                                Convert-PSObjectToHashTable
     }
 
     [object[]] GetChildItem()
@@ -454,33 +475,34 @@ class v6Scope : SHiPSDirectory
 {
     [String] $Name
     [String] $Prefix
-    [String] $PrefixLength
-    [String] $PreferredLifetime
-    [String] $ValidLifeTime
+    [int] $PrefixLength
+    [TimeSpan] $PreferredLifetime
+    [TimeSpan] $ValidLifeTime
     [hashtable] $DNSSetting
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
     v6Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.Name)
     {
         $this.Name              = $InputObject.Name
-        $this.Prefix            = $InputObject.Prefix
+        $this.Prefix            = $InputObject.Prefix.ToString()
         $this.PrefixLength      = $InputObject.PrefixLength
         $this.PreferredLifetime = $InputObject.PreferredLifetime
         $this.ValidLifeTime     = $InputObject.ValidLifeTime
         $this.CimSession        = $CimSession
 
         # Populate the DNS Settings hashtable
-        $this.DNSSetting = Get-DhcpServerv6DnsSetting -CimSession $this.CimSession -Prefix $this.Prefix |
-                                Convert-PSObjectToHashTable
+        $this.DNSSetting        = Get-DhcpServerv6DnsSetting -CimSession $this.CimSession -Prefix $this.Prefix |
+                                    Convert-PSObjectToHashTable
 
     }
 
     [object[]] GetChildItem()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
-        #$obj.Add([v6ScopeOptions]::new($this.ScopeId, $this.CimSession))
-        #$obj.Add([v6Reservations]::new($this.ScopeId, $this.CimSession))
-        #$obj.Add([v6AddressLeases]::new($this.ScopeId, $this.CimSession))
+        $obj.Add([ScopeOptions]::new($null, $this.Prefix, $this.CimSession))
+        $obj.Add([Reservations]::new($null, $this.Prefix, $this.CimSession))
+        $obj.Add([AddressLeases]::new($null, $this.Prefix, $this.CimSession))
+        $obj.Add([Exclusions]::new($null, $this.Prefix, $this.CimSession))
         return $obj
     }
 
@@ -511,6 +533,68 @@ class v6ScopeOption : SHiPSLeaf
         
     }
 }
+
+[SHiPSProvider(UseCache=$true)]
+class v6Reservation : SHiPSLeaf
+{
+    [String] $Prefix
+    [String] $ClientDuid
+    [String] $Name
+    [int32] $Iaid
+    [String] $IPAddress
+    [String] $AddressState
+    [String] $Description
+
+    v6Reservation ([String] $Prefix, [Object] $InputObject) :base($InputObject.Name)
+    {
+        $this.Prefix        = $Prefix
+        $this.ClientDuid    = $InputObject.ClientDuid
+        $this.Name          = $InputObject.Name
+        $this.Iaid         = $InputObject.Iaid
+        $this.IPAddress     = $InputObject.IPAddress
+        $this.AddressState  = $InputObject.AddressState
+        $this.Description   = $InputObject.Description
+    }
+}
+
+
+[SHiPSProvider(UseCache=$true)]
+class v6AddressLease : SHiPSLeaf
+{
+    [String] $IPAddress
+    [String] $Prefix
+    [String] $AddressType
+    [String] $ClientDuid
+    [String] $Description
+    [String] $HostName
+    [datetime] $LeaseExpiryTime
+
+    v6AddressLease ([String] $Prefix, [Object] $InputObject) :base($InputObject.IPAddress)
+    {
+        $this.Prefix            = $Prefix
+        $this.IPAddress         = $InputObject.IPAddress
+        $this.AddressType       = $InputObject.AddressType
+        $this.ClientDuid        = $InputObject.ClientDuid
+        $this.HostName          = $InputObject.HostName
+        $this.LeaseExpiryTime   = $InputObject.LeaseExpiryTime
+        $this.Description       = $InputObject.Description
+    }
+}
+
+[SHiPSProvider(UseCache=$true)]
+class v6Exclusion : SHiPSLeaf {
+    [IPAddress] $Prefix
+    [IPAddress] $StartRange
+    [IPAddress] $EndRange
+
+    v6Exclusion([Object] $InputObject) :base($InputObject.StartRange) {
+        $this.Prefix        = $InputObject.Prefix
+        $this.StartRange    = $InputObject.StartRange
+        $this.EndRange      = $InputObject.EndRange
+    }
+}
+
+
 #endregion IPv6 Scopes
 
 #region cmdlets
