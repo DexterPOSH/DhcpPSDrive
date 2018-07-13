@@ -347,8 +347,8 @@ class AddressLeases : SHiPSDirectory
         }
         elseif ($this.Prefix)
         {
-            foreach ($v6Lease in $(Get-DhcpServerv4Lease -Prefix $this.Prefix -CimSession $this.CimSession)) {
-                $obj.Add([v4AddressLease]::new($this.Prefix, $v6Lease))
+            foreach ($v6Lease in $(Get-DhcpServerv6Lease -Prefix $this.Prefix -CimSession $this.CimSession)) {
+                $obj.Add([v6AddressLease]::new($this.Prefix, $v6Lease))
             }
         }
         return $obj
@@ -407,13 +407,16 @@ class Exclusions : SHiPSDirectory {
         $obj = New-Object -TypeName System.Collections.ArrayList
         if ($this.ScopeId)
         {
-            foreach ($v4Reservation in $(Get-DhcpServerv4ExclusionRange -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
-                $obj.Add([v4Exclusion]::new($this.ScopeId, $v4Reservation))
+            foreach ($v4Exclusion in $(Get-DhcpServerv4ExclusionRange -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
+                $obj.Add([v4Exclusion]::new($this.ScopeId, $v4Exclusion))
             }
         }
         elseif ($this.Prefix)
         {
             # Expost v6 Exclusion here
+            foreach ($v6Exclusion in $(Get-DhcpServerv6ExclusionRange -Prefix $this.Prefix -CimSession $this.CimSession)) {
+                $obj.Add([v6Exclusion]::new($this.ScopeId, $v6Exclusion))
+            }
         }
         
         return $obj
