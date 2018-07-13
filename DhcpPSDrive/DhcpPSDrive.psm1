@@ -40,6 +40,7 @@ class DhcpServer : SHiPSDirectory
     [int] $DynamicDnsQueueLength
     [hashtable[]] $IPv4Binding
     [hashtable[]] $Ipv6Binding
+    [hashtable] $ServerSetting
     
     hidden [Microsoft.Management.Infrastructure.CimSession] $CimSession = $null
     
@@ -47,10 +48,11 @@ class DhcpServer : SHiPSDirectory
     DhcpServer ([string] $name) :base($name)
     {
         $this.CimSession = New-CimSession -ComputerName $name
-        if (Get-DhcpServerSetting -CimSession $this.CimSession) # Check if it is a DHCP Server first
+        $DhcpSetting = Get-DhcpServerSetting -CimSession $this.CimSession
+        if ($DhcpSetting) # Check if it is a DHCP Server first, 
         {
             [DhcpRoot]::Sessions += $this.CimSession
-            $this.InitializeDHCPServerProperties()
+            $this.ServerSetting = $DhcpSetting | Convert-PSObjectToHashTable -Exclude PSComupterName
         }
         
     }
@@ -58,14 +60,20 @@ class DhcpServer : SHiPSDirectory
     DhcpServer([string]$name, [Microsoft.Management.Infrastructure.CimSession]$cimsession):base($name)
     {
         $this.CimSession = $cimsession
+        $DhcpSetting = Get-DhcpServerSetting -CimSession $this.CimSession
+        if ($DhcpSetting) # Check if it is a DHCP Server first, 
+        {
+            [DhcpRoot]::Sessions += $this.CimSession
+            $this.ServerSetting = $DhcpSetting | Convert-PSObjectToHashTable -Exclude PSComupterName
+        }
     }
 
 
-    InitializeDHCPServerProperties ()
+    Initialize ()
     {
         try 
         {
-            Write-Verbose -Message "Setting Dhcp Server properties..." -Verbose
+            Write-Verbose -Message "Setting Dhcp Server $this.Name properties..." -Verbose
             $this.MsReleaseLease    = Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 2 -VendorClass 'Microsoft Options' -ErrorAction SilentlyContinue | 
                                         Select-Object -ExpandProperty Value
             $this.TimeList          = ( Get-DhcpServerv4OptionValue -CimSession $this.CimSession -OptionId 4 -ErrorAction SilentlyContinue ).Value
@@ -84,7 +92,7 @@ class DhcpServer : SHiPSDirectory
         }
         catch
         {
-            Write-Warning -Message "[InitializeDHCPServerProperties] $PSItem.Exception"
+            Write-Warning -Message "[Initialize] $PSItem.Exception"
         }
         
     }
@@ -108,6 +116,8 @@ class DhcpServer : SHiPSDirectory
     }
 }
 
+
+#region IPv4 Scopes
 
 [SHiPSProvider(UseCache=$true)]
 class IPv4 : SHiPSDirectory
@@ -390,6 +400,79 @@ class AddressLease : SHiPSLeaf
 
 #endregion AddressLeases
 
+#endregion IPv4 Scopes
+
+
+#region IPv6 Scopes
+[SHiPSProvider(UseCache=$true)]
+class IPv6 : SHiPSDirectory
+{
+    [hashtable] $DNSSetting
+    hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
+
+    IPv6 ([Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($this.GetType())
+    {
+        $this.CimSession    = $CimSession
+        $this.DnsSetting = Get-DhcpServerv6DnsSetting -CimSession $this.CimSession -ErrorAction SilentlyContinue |
+                            Convert-PSObjectToHashTable
+    }
+
+    [object[]] GetChildItem()
+    {
+        $obj = New-Object -TypeName System.Collections.ArrayList
+        $v6Scopes = @(Get-DhcpServerv6Scope -CimSession $this.CimSession)
+        foreach ($v6Scope in $v6Scopes)
+        {
+            $obj.Add([v4Scope]::new($v6Scope, $this.CimSession))
+        }
+        return $obj
+    }
+
+}
+
+[SHiPSProvider(UseCache=$true)]
+class v6Scope : SHiPSDirectory
+{
+    [String] $Name
+    [String] $Prefix
+    [String] $PrefixLength
+    [String] $PreferredLifetime
+    [String] $ValidLifeTime
+    [hashtable] $DNSSetting
+    hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
+
+    v6Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.Name)
+    {
+        $this.Name              = $InputObject.Name
+        $this.Prefix            = $InputObject.Prefix
+        $this.PrefixLength      = $InputObject.PrefixLength
+        $this.PreferredLifetime = $InputObject.PreferredLifetime
+        $this.ValidLifeTime     = $InputObject.ValidLifeTime
+        $this.CimSession        = $CimSession
+
+        # Populate the DNS Settings hashtable
+        $this.DNSSetting = Get-DhcpServerv6DnsSetting -CimSession $this.CimSession -Prefix $this.Prefix |
+                                Convert-PSObjectToHashTable
+
+    }
+
+    [object[]] GetChildItem()
+    {
+        $obj = New-Object -TypeName System.Collections.ArrayList
+        #$obj.Add([v6ScopeOptions]::new($this.ScopeId, $this.CimSession))
+        #$obj.Add([v6Reservations]::new($this.ScopeId, $this.CimSession))
+        #$obj.Add([v6AddressLeases]::new($this.ScopeId, $this.CimSession))
+        return $obj
+    }
+
+    [Microsoft.Management.Infrastructure.CimInstance[]] DisplayStatistics ()
+    {
+        return $(Get-DhcpServerv6ScopeStatistics -CimSession $this.CimSession -Prefix $this.Prefix)
+    }
+
+}
+
+#endregion IPv6 Scopes
 
 #region cmdlets
 
