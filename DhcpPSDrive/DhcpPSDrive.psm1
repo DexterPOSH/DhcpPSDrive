@@ -423,7 +423,7 @@ class IPv6 : SHiPSDirectory
         $v6Scopes = @(Get-DhcpServerv6Scope -CimSession $this.CimSession)
         foreach ($v6Scope in $v6Scopes)
         {
-            $obj.Add([v4Scope]::new($v6Scope, $this.CimSession))
+            $obj.Add([v6Scope]::new($v6Scope, $this.CimSession))
         }
         return $obj
     }
