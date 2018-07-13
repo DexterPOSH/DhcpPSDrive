@@ -1,6 +1,6 @@
 using namespace Microsoft.PowerShell.SHiPS
 
-[SHiPSProvider()]
+[SHiPSProvider(UseCache=$True)]
 class DhcpRoot : SHiPSDirectory
 {
     #static [System.Collections.ArrayList] $DHCPServers
@@ -101,7 +101,7 @@ class DhcpServer : SHiPSDirectory
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
         $obj.Add([IPv4]::new($this.CimSession))
-        #$obj.Add([IPv6]::new($this.DnsName))
+        $obj.Add([IPv6]::new($this.CimSession))
         return $obj 
     }
 
