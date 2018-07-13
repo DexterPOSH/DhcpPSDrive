@@ -20,7 +20,7 @@ class DhcpRoot : SHiPSDirectory
             }
         }
         else{
-            $obj += [DhcpServer]::new('localhost')
+            $obj += [DhcpServer]::new("$env:COMPUTERNAME")
         }
         return $obj
     }
