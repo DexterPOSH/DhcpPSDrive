@@ -164,7 +164,7 @@ class v4Scope : SHiPSDirectory
     [string] $LeaseDuration
     [hashtable] $DNSSetting
     [hashtable] $FailoverRelationShip
-    hidden [String] $ScopeId
+    [String] $ScopeId
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
     v4Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.ScopeId)
@@ -742,7 +742,7 @@ Function Export-PSDrive {
         # Specify the Class TypeNames to exclude while exporting the PSDrive.
         # For Ex v4AddressLease class is skipped while exporting the DHCP server config
         [Parameter()]
-        [String[]] $ExcludeClass = @('v4AddressLease')
+        [String[]] $ExcludeClass = @('AddressLeases')
     )
     $PSDrive = Get-PSDriveAsPSObject -Name $Name -ExcludeClass $ExcludeClass -ErrorAction Stop
 
@@ -817,7 +817,7 @@ function Get-ShiPSItemAsPSObject {
         $Item = Get-Item -Path $Path
         if ( $Item.PSIsContainer -and ($($Item.GetType().FullName) -notin $ExcludeClass))
         {
-            Write-Verbose -Message "Processing Item $($Item.Name)"
+            Write-Verbose -Message "Processing Item $($Item.Name)..."
             $psObject = [PSCustomObject]($Item | Convert-PSObjectToHashTable -Exclude $Exclude) # First capture all the item properties
             Add-Member -InputObject $psObject -MemberType NoteProperty -Name Type -Value "$($Item.GetType().FullName)" -ErrorAction SilentlyContinue
             $ChildItem = Get-ChildItem -Path $Path
@@ -830,7 +830,7 @@ function Get-ShiPSItemAsPSObject {
                     if ($child.PSIsContainer)
                     {
                         $childPath = if ($Path[-1] -eq "\") {"$Path$($child.PSChildName)"} else {"$Path\$($child.PSChildName)"}
-                        $psObject.ChildItem += $(Get-ShiPSItemAsPSObject -Path $childPath -Exclude $Exclude)
+                        $psObject.ChildItem += $(Get-ShiPSItemAsPSObject -Path $childPath -Exclude $Exclude -ExcludeClass $ExcludeClass)
                     }
                     else
                     {
@@ -839,6 +839,10 @@ function Get-ShiPSItemAsPSObject {
                 }
             }
             
+        }
+        else
+        {
+            Write-Verbose -Message "Skipping Item $($Item.Name)..."
         }
         return $psObject
     }
