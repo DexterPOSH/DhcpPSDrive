@@ -273,7 +273,7 @@ class Reservations : SHiPSDirectory
         $this.CimSession    = $CimSession
     }
 
-    [v4Reservation[]] GetChildItem ()
+    [object[]] GetChildItem ()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
 
@@ -336,7 +336,7 @@ class AddressLeases : SHiPSDirectory
         $this.Prefix        = $Prefix
     }
 
-    [v4AddressLease[]] GetChildItem ()
+    [object[]] GetChildItem ()
     {
         $obj = New-Object -TypeName System.Collections.ArrayList
         if ($this.ScopeId)
@@ -405,7 +405,7 @@ class Exclusions : SHiPSDirectory {
         $this.Prefix        = $Prefix
     }
 
-    [v4Exclusion[]] GetChildItem() {
+    [object[]] GetChildItem() {
         $obj = New-Object -TypeName System.Collections.ArrayList
         if ($this.ScopeId)
         {
@@ -429,14 +429,14 @@ class Exclusions : SHiPSDirectory {
 
 [SHiPSProvider(UseCache=$true)]
 class v4Exclusion : SHiPSLeaf {
-    [IPAddress] $ScopeID
-    [IPAddress] $StartRange
-    [IPAddress] $EndRange
+    [string] $ScopeID
+    [string] $StartRange
+    [string] $EndRange
 
     v4Exclusion([Object] $InputObject) :base($InputObject.StartRange) {
-        $this.ScopeId        = $InputObject.ScopeId
-        $this.StartRange    = $InputObject.StartRange
-        $this.EndRange      = $InputObject.EndRange
+        $this.ScopeId        = $InputObject.ScopeId.ToString()
+        $this.StartRange    = $InputObject.StartRange.ToString()
+        $this.EndRange      = $InputObject.EndRange.ToString()
     }
 }
 
@@ -590,14 +590,14 @@ class v6AddressLease : SHiPSLeaf
 
 [SHiPSProvider(UseCache=$true)]
 class v6Exclusion : SHiPSLeaf {
-    [IPAddress] $Prefix
-    [IPAddress] $StartRange
-    [IPAddress] $EndRange
+    [string] $Prefix
+    [string] $StartRange
+    [string] $EndRange
 
     v6Exclusion([Object] $InputObject) :base($InputObject.StartRange) {
-        $this.Prefix        = $InputObject.Prefix
-        $this.StartRange    = $InputObject.StartRange
-        $this.EndRange      = $InputObject.EndRange
+        $this.Prefix        = $InputObject.Prefix.ToString()
+        $this.StartRange    = $InputObject.StartRange.ToString()
+        $this.EndRange      = $InputObject.EndRange.ToString()
     }
 }
 
@@ -838,13 +838,13 @@ function Get-ShiPSItemAsPSObject {
                     }
                 }
             }
-            
+            return $psObject
         }
         else
         {
             Write-Verbose -Message "Skipping Item $($Item.Name)..."
         }
-        return $psObject
+        
     }
 }
 
