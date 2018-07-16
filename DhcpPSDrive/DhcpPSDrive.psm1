@@ -167,7 +167,7 @@ class v4Scope : SHiPSDirectory
     hidden [String] $ScopeId
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
-    v4Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.Name)
+    v4Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.ScopeId)
     {
         $this.Name          = $InputObject.Name
         $this.ScopeId       = $InputObject.ScopeId
@@ -342,13 +342,13 @@ class AddressLeases : SHiPSDirectory
         if ($this.ScopeId)
         {
             foreach ($v4Lease in $(Get-DhcpServerv4Lease -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
-                $obj.Add([v4AddressLease]::new($this.ScopeId, $v4Lease))
+                $obj.Add([v4AddressLease]::new($v4Lease))
             }
         }
         elseif ($this.Prefix)
         {
             foreach ($v6Lease in $(Get-DhcpServerv6Lease -Prefix $this.Prefix -CimSession $this.CimSession)) {
-                $obj.Add([v6AddressLease]::new($this.Prefix, $v6Lease))
+                $obj.Add([v6AddressLease]::new($v6Lease))
             }
         }
         return $obj
@@ -361,30 +361,32 @@ class AddressLeases : SHiPSDirectory
 [SHiPSProvider(UseCache=$true)]
 class v4AddressLease : SHiPSLeaf
 {
+    [String] $IPAddress
+    [String] $ScopeId
     [String] $AddressState
     [String] $ClientId
     [String] $ClientType
-    [String] $Description
-    [String] $DnsRegistration
+    [String] $DnsRegisration
     [String] $DnsRR
-    [String] $HostName
-    [String] $LeaseExpiryTime
-    [bool] $NapCapable
-    [String] $NapStatus
-    [String] $PolicyName
-    [String] $ProbationEnds
+    [String] $Hostname
     [String] $ServerIP
-    [String] $ScopeId
+    [datetime] $LeaseExpiryTime
 
-    v4AddressLease ([String] $ScopeId, [Object] $InputObject) :base($InputObject.IPAddress)
+    v4AddressLease ([Object] $InputObject) :base($InputObject.IPAddress)
     {
-        $this.ScopeId = $ScopeId
-        $this.ClientId = $InputObject.ClientId
-        $this.Name = $InputObject.Name
-        $this.Type = $InputObject.Type
         $this.IPAddress = $InputObject.IPAddress
+        $this.ScopeId = $InputObject.ScopeId
         $this.AddressState = $InputObject.AddressState
-        $this.Description = $InputObject.Description
+        $this.ClientId = $InputObject.ClientId
+        $this.ClientType = $InputObject.ClientType
+        $this.DnsRegisration = $InputObject.DnsRegisration
+        $this.DnsRR = $InputObject.DnsRR
+        $this.Hostname = $InputObject.Hostname
+        $this.ServerIP = $InputObject.ServerIP
+        if ($InputObject.LeaseExpiryTime) {
+            $this.LeaseExpiryTime = $InputObject.LeaseExpiryTime
+        }
+        
     }
 }
 
@@ -408,14 +410,14 @@ class Exclusions : SHiPSDirectory {
         if ($this.ScopeId)
         {
             foreach ($v4Exclusion in $(Get-DhcpServerv4ExclusionRange -ScopeId $this.ScopeId -CimSession $this.CimSession)) {
-                $obj.Add([v4Exclusion]::new($this.ScopeId, $v4Exclusion))
+                $obj.Add([v4Exclusion]::new($v4Exclusion))
             }
         }
         elseif ($this.Prefix)
         {
             # Expost v6 Exclusion here
             foreach ($v6Exclusion in $(Get-DhcpServerv6ExclusionRange -Prefix $this.Prefix -CimSession $this.CimSession)) {
-                $obj.Add([v6Exclusion]::new($this.ScopeId, $v6Exclusion))
+                $obj.Add([v6Exclusion]::new( $v6Exclusion))
             }
         }
         
@@ -432,7 +434,7 @@ class v4Exclusion : SHiPSLeaf {
     [IPAddress] $EndRange
 
     v4Exclusion([Object] $InputObject) :base($InputObject.StartRange) {
-        $this.ScopId        = $InputObject.ScopeId
+        $this.ScopeId        = $InputObject.ScopeId
         $this.StartRange    = $InputObject.StartRange
         $this.EndRange      = $InputObject.EndRange
     }
@@ -484,7 +486,7 @@ class v6Scope : SHiPSDirectory
     [hashtable] $DNSSetting
     hidden [Microsoft.Management.Infrastructure.CimSession]$CimSession = $null
 
-    v6Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.Name)
+    v6Scope([object] $InputObject, [Microsoft.Management.Infrastructure.CimSession]$CimSession) :base($InputObject.Prefix)
     {
         $this.Name              = $InputObject.Name
         $this.Prefix            = $InputObject.Prefix.ToString()
@@ -572,14 +574,16 @@ class v6AddressLease : SHiPSLeaf
     [String] $HostName
     [datetime] $LeaseExpiryTime
 
-    v6AddressLease ([String] $Prefix, [Object] $InputObject) :base($InputObject.IPAddress)
+    v6AddressLease ([Object] $InputObject) :base($InputObject.IPAddress)
     {
-        $this.Prefix            = $Prefix
+        $this.Prefix            = $InputObject.Prefix
         $this.IPAddress         = $InputObject.IPAddress
         $this.AddressType       = $InputObject.AddressType
         $this.ClientDuid        = $InputObject.ClientDuid
         $this.HostName          = $InputObject.HostName
-        $this.LeaseExpiryTime   = $InputObject.LeaseExpiryTime
+        if ($InputObject.LeaseExpiryTime) {
+            $this.LeaseExpiryTime   = $InputObject.LeaseExpiryTime
+        }
         $this.Description       = $InputObject.Description
     }
 }
@@ -733,15 +737,20 @@ Function Export-PSDrive {
 
         [Parameter()]
         [ValidateSet('JSON','CLIXML')]
-        [String] $Type = 'JSON'
+        [String] $Type = 'JSON',
+
+        # Specify the Class TypeNames to exclude while exporting the PSDrive.
+        # For Ex v4AddressLease class is skipped while exporting the DHCP server config
+        [Parameter()]
+        [String[]] $ExcludeClass = @('v4AddressLease')
     )
-    $PSDrive = Get-PSDriveAsPSObject -Name $Name -ErrorAction Stop
+    $PSDrive = Get-PSDriveAsPSObject -Name $Name -ExcludeClass $ExcludeClass -ErrorAction Stop
 
     Switch -Exact ($Type)
     {
         'JSON'
         {
-            Add-Content -Path "$PSScriptRoot\$Name.json" -Value  ($PSDrive | ConvertTo-Json ) -Depth 99
+            Set-Content -Path "$PSScriptRoot\$Name.json" -Value ($PSDrive | ConvertTo-Json -Depth 99) -Force
             break
         }
         'CLIXML'
@@ -755,7 +764,10 @@ Function Get-PSDriveAsPSObject {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [String] $Name
+        [String] $Name,
+
+        [Parameter()]
+        [String[]] $ExcludeClass
     )
     $PSDrive =  Get-PSDrive -Name $Name -ErrorAction SilentlyContinue
     if (-not $PSDrive)
@@ -765,7 +777,7 @@ Function Get-PSDriveAsPSObject {
     Push-Location
     $path = Resolve-Path -Path $("{0}:/" -f $Name)
     Set-Location -Path $Path
-    Get-ShiPSItemAsPSObject -Path $path
+    Get-ShiPSItemAsPSObject -Path $path -ExcludeClass $ExcludeClass
     Pop-Location
 }
 
@@ -779,7 +791,10 @@ function Get-ShiPSItemAsPSObject {
         [String] $Path,
 
         [Parameter()]
-        [string[]] $Exclude = @()
+        [string[]] $Exclude = @(),
+
+        [Parameter()]
+        [String[]] $ExcludeClass
     )
     process
     {
@@ -800,8 +815,9 @@ function Get-ShiPSItemAsPSObject {
             Throw "$Path not resolvable. $PSitem.Exception"
         }
         $Item = Get-Item -Path $Path
-        if ( $Item.PSIsContainer)
+        if ( $Item.PSIsContainer -and ($($Item.GetType().FullName) -notin $ExcludeClass))
         {
+            Write-Verbose -Message "Processing Item $($Item.Name)"
             $psObject = [PSCustomObject]($Item | Convert-PSObjectToHashTable -Exclude $Exclude) # First capture all the item properties
             Add-Member -InputObject $psObject -MemberType NoteProperty -Name Type -Value "$($Item.GetType().FullName)" -ErrorAction SilentlyContinue
             $ChildItem = Get-ChildItem -Path $Path
