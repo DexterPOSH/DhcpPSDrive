@@ -55,17 +55,41 @@
       <TableControl>
         <AutoSize/>
         <TableHeaders>
-          <TableColumnHeader><Label>Name</Label></TableColumnHeader>
           <TableColumnHeader><Label>ScopeId</Label></TableColumnHeader>
+          <TableColumnHeader><Label>Name</Label></TableColumnHeader>
           <TableColumnHeader><Label>SubnetMask</Label></TableColumnHeader>
         </TableHeaders>
         <TableRowEntries>
           <TableRowEntry>
             <Wrap/>
             <TableColumnItems>
-              <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
               <TableColumnItem><PropertyName>ScopeId</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
               <TableColumnItem><PropertyName>SubnetMask</PropertyName></TableColumnItem> 
+            </TableColumnItems>
+          </TableRowEntry>
+          </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>v6ScopeView</Name>
+      <ViewSelectedBy>
+          <TypeName>v6Scope</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <AutoSize/>
+        <TableHeaders>
+          <TableColumnHeader><Label>Prefix</Label></TableColumnHeader>
+          <TableColumnHeader><Label>Name</Label></TableColumnHeader>
+          <TableColumnHeader><Label>PrefixLength</Label></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <Wrap/>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>Prefix</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>PrefixLength</PropertyName></TableColumnItem> 
             </TableColumnItems>
           </TableRowEntry>
           </TableRowEntries>
@@ -92,6 +116,56 @@
               <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
               <TableColumnItem><PropertyName>VendorClass</PropertyName></TableColumnItem>
               <TableColumnItem><PropertyName>Value</PropertyName></TableColumnItem> 
+            </TableColumnItems>
+          </TableRowEntry>
+          </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>v6ScopeOptionView</Name>
+      <ViewSelectedBy>
+          <TypeName>v6ScopeOption</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <AutoSize/>
+        <TableHeaders>
+        <TableColumnHeader><Label>Option Id</Label></TableColumnHeader>
+          <TableColumnHeader><Label>Option Name</Label></TableColumnHeader>
+          <TableColumnHeader><Label>Vendor</Label></TableColumnHeader>
+          <TableColumnHeader><Label>Value</Label></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <Wrap/>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>OptionId</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>VendorClass</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Value</PropertyName></TableColumnItem> 
+            </TableColumnItems>
+          </TableRowEntry>
+          </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>v4ExclusionView</Name>
+      <ViewSelectedBy>
+          <TypeName>v4Exclusion</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <AutoSize/>
+        <TableHeaders>
+          <TableColumnHeader><Label>StartRange</Label></TableColumnHeader>
+          <TableColumnHeader><Label>EndRange</Label></TableColumnHeader>
+          <TableColumnHeader><Label>ScopeId</Label></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <Wrap/>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>StartRange</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>EndRange</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>ScopeId</PropertyName></TableColumnItem> 
             </TableColumnItems>
           </TableRowEntry>
           </TableRowEntries>
